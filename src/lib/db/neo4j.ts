@@ -13,7 +13,12 @@ let _neo4jAvailable: boolean | null = null; // Track Neo4j availability
 export function getDriver() {
   if (!_driver) {
     logger.info(`Connecting to Neo4j at ${uri} with user ${user}`);
-    _driver = neo4j.driver(uri, neo4j.auth.basic(user, password));
+    _driver = neo4j.driver(
+      uri,
+      neo4j.auth.basic(user, password), {
+        encrypted: 'ENCRYPTION_OFF'
+      }
+    );
   }
   return _driver;
 }
