@@ -1,5 +1,10 @@
 import { initDriver } from '@/lib/db/neo4j';
 import type { PageSnapshotEntry } from '@/lib/db/models/page';
+import {
+  isPageVectorisePending,
+  isPageVectoriseSkipped,
+} from '@/services/vectorise/page/pending';
+import type { PageVectoriseSkipReason } from '@/services/vectorise/page/types';
 import type { DateTime, Integer } from 'neo4j-driver';
 import { fetchDocsSnapshot } from './client';
 
@@ -11,6 +16,9 @@ export interface DocsPageNeo4jState {
   chunkCount: number;
   embeddingsUpdatedAt: DateTime | null;
   lastModified: DateTime | null;
+  vectoriseStatus: string | null;
+  vectoriseSkippedAt: DateTime | null;
+  vectoriseSkipReason: PageVectoriseSkipReason | null;
 }
 
 export type PageVerifyLineStatus = 'ok' | 'warn' | 'fail';
@@ -22,6 +30,8 @@ export interface PageVerifyLine {
   checksumCurrent: boolean;
   chunkCount: number;
   vectorisePending: boolean;
+  vectoriseSkipped: boolean;
+  vectoriseSkipReason: PageVectoriseSkipReason | null;
 }
 
 export interface PageVerifySummary {
@@ -50,11 +60,16 @@ export function isDocsChecksumCurrent(
 /** Same predicate as pickPagesNeedingVectorisation in vectorise/page/neo4j.ts. */
 export function isVectorisePending(
   embeddingsUpdatedAt: DateTime | null,
-  lastModified: DateTime | null
+  lastModified: DateTime | null,
+  vectoriseStatus: string | null = null,
+  vectoriseSkippedAt: DateTime | null = null
 ): boolean {
-  if (embeddingsUpdatedAt == null) return true;
-  if (lastModified == null) return false;
-  return embeddingsUpdatedAt < lastModified;
+  return isPageVectorisePending({
+    embeddingsUpdatedAt,
+    lastModified,
+    vectoriseStatus,
+    vectoriseSkippedAt,
+  });
 }
 
 function toDateTime(value: unknown): DateTime | null {
@@ -78,6 +93,9 @@ export async function fetchDocsPagesNeo4jState(): Promise<Map<string, DocsPageNe
              p.checksum AS checksum,
              p.last_modified AS last_modified,
              p.embeddings_updated_at AS embeddings_updated_at,
+             p.vectorise_status AS vectorise_status,
+             p.vectorise_skipped_at AS vectorise_skipped_at,
+             p.vectorise_skip_reason AS vectorise_skip_reason,
              count(c) AS chunk_count
       `,
       { source: DOCS_SOURCE }
@@ -88,12 +106,21 @@ export async function fetchDocsPagesNeo4jState(): Promise<Map<string, DocsPageNe
       const slug = record.get('slug') as string;
       const checksum = record.get('checksum');
       const chunkCountRaw = record.get('chunk_count') as Integer;
+      const skipReason = record.get('vectorise_skip_reason');
       map.set(slug, {
         slug,
         checksum: typeof checksum === 'string' ? checksum : null,
         chunkCount: chunkCountRaw.toNumber(),
         embeddingsUpdatedAt: toDateTime(record.get('embeddings_updated_at')),
         lastModified: toDateTime(record.get('last_modified')),
+        vectoriseStatus: typeof record.get('vectorise_status') === 'string'
+          ? (record.get('vectorise_status') as string)
+          : null,
+        vectoriseSkippedAt: toDateTime(record.get('vectorise_skipped_at')),
+        vectoriseSkipReason:
+          skipReason === 'not_found' || skipReason === 'empty' || skipReason === 'no_chunks'
+            ? skipReason
+            : null,
       });
     }
     return map;
@@ -114,17 +141,26 @@ function evaluatePage(
       checksumCurrent: false,
       chunkCount: 0,
       vectorisePending: false,
+      vectoriseSkipped: false,
+      vectoriseSkipReason: null,
     };
   }
 
   const checksumCurrent = isDocsChecksumCurrent(neo4jState.checksum, entry.checksum);
   const vectorisePending = isVectorisePending(
     neo4jState.embeddingsUpdatedAt,
-    neo4jState.lastModified
+    neo4jState.lastModified,
+    neo4jState.vectoriseStatus,
+    neo4jState.vectoriseSkippedAt
   );
+  const vectoriseSkipped = isPageVectoriseSkipped({
+    vectoriseStatus: neo4jState.vectoriseStatus,
+    vectorisePending,
+  });
   const chunkCount = neo4jState.chunkCount;
 
-  const fullySynced = checksumCurrent && chunkCount > 0 && !vectorisePending;
+  const fullySynced =
+    checksumCurrent && !vectorisePending && (chunkCount > 0 || vectoriseSkipped);
 
   return {
     slug: entry.slug,
@@ -133,6 +169,8 @@ function evaluatePage(
     checksumCurrent,
     chunkCount,
     vectorisePending,
+    vectoriseSkipped,
+    vectoriseSkipReason: vectoriseSkipped ? neo4jState.vectoriseSkipReason : null,
   };
 }
 

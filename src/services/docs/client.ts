@@ -31,7 +31,8 @@ export async function fetchDocsSnapshot(): Promise<PageSnapshotEntry[]> {
   return pages;
 }
 
-export async function fetchDocsPageContent(slug: string): Promise<string> {
+/** Page body text, or null when docs has no content for this slug (404). */
+export async function fetchDocsPageContent(slug: string): Promise<string | null> {
   const docsAppUrl = requireEnv('DOCS_APP_URL').replace(/\/$/, '');
   const token = requireEnv('PRIVATE_API_TOKEN');
 
@@ -39,6 +40,10 @@ export async function fetchDocsPageContent(slug: string): Promise<string> {
   const res = await fetch(serveUrl, {
     headers: { Authorization: `Bearer ${token}` },
   });
+
+  if (res.status === 404) {
+    return null;
+  }
 
   if (!res.ok) {
     throw new Error(`serve failed for ${slug}: ${res.status}`);

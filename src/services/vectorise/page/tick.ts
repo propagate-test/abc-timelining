@@ -18,7 +18,7 @@ function getPageStageReserveMs(): number {
 }
 
 export async function runPageVectoriseTick(): Promise<PageVectoriseTickResult> {
-  const counts = { vectorised: 0, failed: 0 };
+  const counts = { vectorised: 0, skipped: 0, failed: 0 };
 
   const neo4jReady = await isNeo4jAvailable();
   if (!neo4jReady) {
@@ -38,7 +38,7 @@ export async function runPageVectoriseTick(): Promise<PageVectoriseTickResult> {
       // Avoid starting a full page stage when we are close to timeout.
       if (!hasTimeRemaining(startTime, stageReserveMs)) {
         logger.info('Page vectorise tick stopping early due to time budget', {
-          processed: counts.vectorised + counts.failed,
+          processed: counts.vectorised + counts.skipped + counts.failed,
           totalCandidates: slugs.length,
           stageReserveMs,
         });
@@ -47,6 +47,7 @@ export async function runPageVectoriseTick(): Promise<PageVectoriseTickResult> {
 
       const result = await vectorisePageStage(slug);
       if (result === 'vectorised') counts.vectorised++;
+      if (result === 'skipped') counts.skipped++;
       if (result === 'failed') counts.failed++;
     }
 
@@ -62,7 +63,7 @@ export async function runPageVectoriseTick(): Promise<PageVectoriseTickResult> {
 export async function buildPageVectoriseResult(
   tick: PageVectoriseTickResult
 ): Promise<PageVectoriseResult> {
-  const { vectorised, failed } = tick;
+  const { vectorised, skipped, failed } = tick;
 
   if (tick.status === 'skipped') {
     return {
@@ -70,6 +71,7 @@ export async function buildPageVectoriseResult(
       message: tick.message,
       schedule: '15min',
       vectorised,
+      skipped,
       failed,
       outstanding: 0,
       hasMore: false,
@@ -85,6 +87,7 @@ export async function buildPageVectoriseResult(
       message: tick.message ?? 'Page vectorise tick failed',
       schedule,
       vectorised,
+      skipped,
       failed,
       outstanding,
       hasMore: outstanding > 0,
@@ -93,6 +96,7 @@ export async function buildPageVectoriseResult(
 
   logger.info('Page vectorise result built', {
     vectorised,
+    skipped,
     failed,
     outstanding,
     schedule,
@@ -102,6 +106,7 @@ export async function buildPageVectoriseResult(
     status: 'success',
     schedule,
     vectorised,
+    skipped,
     failed,
     outstanding,
     hasMore: outstanding > 0,

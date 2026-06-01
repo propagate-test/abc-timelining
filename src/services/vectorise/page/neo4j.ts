@@ -1,6 +1,7 @@
 import { initDriver } from '@/lib/db/neo4j';
 import neo4j from 'neo4j-driver';
-import type { PageChunkInput } from './types';
+import { PAGE_NEEDS_VECTORISATION_PREDICATE } from './pending';
+import type { PageChunkInput, PageVectoriseSkipReason } from './types';
 
 const DOCS_SOURCE = 'docs';
 
@@ -12,8 +13,7 @@ export async function pickPagesNeedingVectorisation(limit: number): Promise<stri
     const result = await session.run(
       `
       MATCH (p:Page { source: $source })
-      WHERE p.embeddings_updated_at IS NULL
-         OR p.embeddings_updated_at < p.last_modified
+      WHERE ${PAGE_NEEDS_VECTORISATION_PREDICATE}
       RETURN p.slug AS slug
       ORDER BY p.slug
       LIMIT $limit
@@ -34,13 +34,34 @@ export async function countPagesNeedingVectorisation(): Promise<number> {
     const result = await session.run(
       `
       MATCH (p:Page { source: $source })
-      WHERE p.embeddings_updated_at IS NULL
-         OR p.embeddings_updated_at < p.last_modified
+      WHERE ${PAGE_NEEDS_VECTORISATION_PREDICATE}
       RETURN count(p) AS count
       `,
       { source: DOCS_SOURCE }
     );
     return result.records[0].get('count').toNumber();
+  } finally {
+    await session.close();
+  }
+}
+
+export async function markPageVectoriseSkipped(
+  slug: string,
+  reason: PageVectoriseSkipReason
+): Promise<void> {
+  const driver = await initDriver();
+  const session = driver.session({ database: 'neo4j' });
+
+  try {
+    await session.run(
+      `
+      MATCH (p:Page { slug: $slug, source: $source })
+      SET p.vectorise_status = 'skipped',
+          p.vectorise_skipped_at = datetime(),
+          p.vectorise_skip_reason = $reason
+      `,
+      { slug, source: DOCS_SOURCE, reason }
+    );
   } finally {
     await session.close();
   }
@@ -101,6 +122,7 @@ export async function markPageVectorised(slug: string): Promise<void> {
       `
       MATCH (p:Page { slug: $slug, source: $source })
       SET p.embeddings_updated_at = datetime()
+      REMOVE p.vectorise_status, p.vectorise_skipped_at, p.vectorise_skip_reason
       `,
       { slug, source: DOCS_SOURCE }
     );

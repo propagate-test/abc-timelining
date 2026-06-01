@@ -20,6 +20,7 @@ const mockedBuildPageVectoriseResult = buildPageVectoriseResult as jest.MockedFu
 const tickResult = {
   status: 'success' as const,
   vectorised: 2,
+  skipped: 0,
   failed: 0,
 };
 
@@ -27,6 +28,7 @@ const mergedResult = {
   status: 'success' as const,
   schedule: '30s' as const,
   vectorised: 2,
+  skipped: 0,
   failed: 0,
   outstanding: 5,
   hasMore: true,

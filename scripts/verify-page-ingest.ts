@@ -20,7 +20,11 @@ function formatLine(line: PageVerifyLine, slugWidth: number): string {
   const checksumLabel = line.checksumCurrent
     ? 'current'
     : 'STALE — ingest needed';
-  const vectorisedLabel = line.vectorisePending ? 'PENDING' : 'current';
+  const vectorisedLabel = line.vectorisePending
+    ? 'PENDING'
+    : line.vectoriseSkipped
+      ? `SKIPPED (${line.vectoriseSkipReason ?? 'unknown'})`
+      : 'current';
 
   return [
     `${icon}  ${line.slug.padEnd(slugWidth)}`,

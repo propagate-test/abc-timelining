@@ -8,10 +8,13 @@ export interface PageChunkInput {
   token_count: number;
 }
 
+export type PageVectoriseSkipReason = 'not_found' | 'empty' | 'no_chunks';
+
 export interface PageVectoriseTickResult {
   status: 'success' | 'skipped' | 'error';
   message?: string;
   vectorised: number;
+  skipped: number;
   failed: number;
 }
 
@@ -20,6 +23,7 @@ export interface PageVectoriseResult {
   message?: string;
   schedule: ScheduleHint;
   vectorised: number;
+  skipped: number;
   failed: number;
   outstanding: number;
   hasMore: boolean;
