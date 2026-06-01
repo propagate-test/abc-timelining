@@ -75,6 +75,34 @@ function createEmptyStats(): DocsIngestStats {
   };
 }
 
+export interface RunDocsIngestUntilCompleteResult extends DocsIngestResult {
+  rounds: number;
+}
+
+/** Run ingest repeatedly until every snapshot page has a current checksum (for local seed). */
+export async function runDocsIngestUntilComplete(
+  options: RunDocsIngestOptions = {}
+): Promise<RunDocsIngestUntilCompleteResult> {
+  let rounds = 0;
+  let lastResult: DocsIngestResult = {
+    status: 'success',
+    stats: createEmptyStats(),
+    hasMore: false,
+  };
+
+  while (true) {
+    lastResult = await runDocsIngest(options);
+    rounds += 1;
+
+    if (lastResult.status !== 'success') {
+      return { ...lastResult, rounds };
+    }
+    if (!lastResult.hasMore) {
+      return { ...lastResult, rounds };
+    }
+  }
+}
+
 export async function runDocsIngest(options: RunDocsIngestOptions = {}): Promise<DocsIngestResult> {
   const emptyStats = createEmptyStats();
 

@@ -13,6 +13,7 @@
     "triggerWorker": "tsx scripts/triggerWorker.ts",
     "create:vector-index": "tsx scripts/createVectorIndex.ts",
     "verify:page-ingest": "tsx scripts/verify-page-ingest.ts",
+    "seed:docs-pages": "tsx scripts/seed-docs-pages.ts",
     "vectorise:pages": "tsx scripts/run-page-vectorise.ts",
     "dev": "next dev --turbopack",
     "build": "next build"

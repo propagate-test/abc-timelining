@@ -1,5 +1,5 @@
 export { fetchDocsSnapshot } from './client';
-export { runDocsIngest } from './ingest';
+export { runDocsIngest, runDocsIngestUntilComplete } from './ingest';
 export { pathToSlug, processLogDrain } from './logDrain';
 export {
   getDocsPageChecksum,

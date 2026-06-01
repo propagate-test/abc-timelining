@@ -19,7 +19,9 @@ function formatLine(line: PageVerifyLine, slugWidth: number): string {
 
   const checksumLabel = line.checksumCurrent
     ? 'current'
-    : 'STALE — ingest needed';
+    : line.checksumMetadataOnly
+      ? 'behind (metadata only)'
+      : 'STALE — ingest needed';
   const vectorisedLabel = line.vectorisePending
     ? 'PENDING'
     : line.vectoriseSkipped

@@ -12,6 +12,10 @@ jest.mock('@/services/docs/client', () => ({
   fetchDocsPageContent: jest.fn(),
 }));
 
+jest.mock('@/services/docs/snapshotCache', () => ({
+  syncDocsPageMetadataFromSnapshot: jest.fn().mockResolvedValue(true),
+}));
+
 jest.mock('@/services/vectorise/page/neo4j', () => ({
   markPageVectoriseSkipped: jest.fn(),
   markPageVectorised: jest.fn(),
@@ -40,6 +44,16 @@ describe('vectorisePageStage', () => {
     jest.clearAllMocks();
   });
 
+  it('skips image-only markdown as empty', async () => {
+    mockedFetch.mockResolvedValue('![slide](./assets/slide-1.png)');
+
+    const result = await vectorisePageStage('en/some-visual');
+
+    expect(result).toBe('skipped');
+    expect(mockedMarkSkipped).toHaveBeenCalledWith('en/some-visual', 'empty');
+    expect(mockedChunk).not.toHaveBeenCalled();
+  });
+
   it('skips with skipped status when docs returns 404', async () => {
     mockedFetch.mockResolvedValue(null);
 
@@ -64,7 +78,7 @@ describe('vectorisePageStage', () => {
   });
 
   it('skips with skipped status when chunking yields no chunks', async () => {
-    mockedFetch.mockResolvedValue('some content');
+    mockedFetch.mockResolvedValue('some content with enough words');
     mockedChunk.mockResolvedValue([]);
 
     const result = await vectorisePageStage('en/no-chunks');
@@ -76,8 +90,8 @@ describe('vectorisePageStage', () => {
   });
 
   it('vectorises when content and chunks are present', async () => {
-    mockedFetch.mockResolvedValue('Hello world');
-    mockedChunk.mockResolvedValue(['Hello world']);
+    mockedFetch.mockResolvedValue('Hello world with enough words');
+    mockedChunk.mockResolvedValue(['Hello world with enough words']);
     mockedEmbed.mockResolvedValue([[0.1, 0.2]]);
 
     const result = await vectorisePageStage('en/real-page');

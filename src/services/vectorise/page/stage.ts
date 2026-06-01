@@ -1,8 +1,10 @@
 import { logger } from '@/lib/logger';
+import { syncDocsPageMetadataFromSnapshot } from '@/services/docs/snapshotCache';
 import { fetchDocsPageContent } from '@/services/docs/client';
 import { chunkText } from '../shared/chunk';
 import { embedTexts } from '../shared/embed';
 import type { VectoriseStageResult } from '../shared/types';
+import { hasVectorisableText } from './content';
 import { markPageVectoriseSkipped, markPageVectorised, upsertPageChunks } from './neo4j';
 import type { PageVectoriseSkipReason } from './types';
 import type { PageChunkInput } from './types';
@@ -21,13 +23,24 @@ function buildPageChunkInputs(slug: string, chunks: string[], embeddings: number
   }));
 }
 
+async function finishVectoriseStage(
+  slug: string,
+  result: VectoriseStageResult
+): Promise<VectoriseStageResult> {
+  if (result === 'failed') {
+    return result;
+  }
+  await syncDocsPageMetadataFromSnapshot(slug);
+  return result;
+}
+
 async function skipPageWithoutVectorisableContent(
   slug: string,
   reason: PageVectoriseSkipReason
 ): Promise<VectoriseStageResult> {
   logger.warn('Page has no vectorisable content, skipping', { slug, reason });
   await markPageVectoriseSkipped(slug, reason);
-  return 'skipped';
+  return finishVectoriseStage(slug, 'skipped');
 }
 
 export async function vectorisePageStage(slug: string): Promise<VectoriseStageResult> {
@@ -38,7 +51,7 @@ export async function vectorisePageStage(slug: string): Promise<VectoriseStageRe
       return skipPageWithoutVectorisableContent(slug, 'not_found');
     }
 
-    if (!content.trim()) {
+    if (!content.trim() || !hasVectorisableText(content)) {
       return skipPageWithoutVectorisableContent(slug, 'empty');
     }
 
@@ -53,7 +66,7 @@ export async function vectorisePageStage(slug: string): Promise<VectoriseStageRe
     await upsertPageChunks(slug, chunkInputs);
     await markPageVectorised(slug);
     logger.info('Page vectorised', { slug, chunkCount: chunks.length });
-    return 'vectorised';
+    return finishVectoriseStage(slug, 'vectorised');
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger.error('Page vectorise stage failed', { slug, error: message });

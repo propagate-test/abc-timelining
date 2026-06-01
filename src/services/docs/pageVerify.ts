@@ -28,6 +28,8 @@ export interface PageVerifyLine {
   status: PageVerifyLineStatus;
   nodePresent: boolean;
   checksumCurrent: boolean;
+  /** Checksum behind snapshot but embeddings already match stored page revision. */
+  checksumMetadataOnly: boolean;
   chunkCount: number;
   vectorisePending: boolean;
   vectoriseSkipped: boolean;
@@ -139,6 +141,7 @@ function evaluatePage(
       status: 'fail',
       nodePresent: false,
       checksumCurrent: false,
+      checksumMetadataOnly: false,
       chunkCount: 0,
       vectorisePending: false,
       vectoriseSkipped: false,
@@ -158,15 +161,17 @@ function evaluatePage(
     vectorisePending,
   });
   const chunkCount = neo4jState.chunkCount;
+  const embeddingsAligned = !vectorisePending && (chunkCount > 0 || vectoriseSkipped);
+  const checksumMetadataOnly = !checksumCurrent && embeddingsAligned;
 
-  const fullySynced =
-    checksumCurrent && !vectorisePending && (chunkCount > 0 || vectoriseSkipped);
+  const fullySynced = checksumCurrent && embeddingsAligned;
 
   return {
     slug: entry.slug,
     status: fullySynced ? 'ok' : 'warn',
     nodePresent: true,
     checksumCurrent,
+    checksumMetadataOnly,
     chunkCount,
     vectorisePending,
     vectoriseSkipped,
