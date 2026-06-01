@@ -1,4 +1,5 @@
 import type { PageSnapshotEntry } from '@/lib/db/models/page';
+import { logger } from '@/lib/logger';
 
 function requireEnv(name: string): string {
   const value = process.env[name];
