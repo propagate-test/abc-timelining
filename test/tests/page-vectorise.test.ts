@@ -45,7 +45,7 @@ describe('API /api/story/page-vectorise', () => {
     mockedBuildPageVectoriseResult.mockReset();
   });
 
-  it('should handle POST for internal chaining', async () => {
+  it('should handle POST requests', async () => {
     mockedRunPageVectoriseTick.mockResolvedValue(tickResult);
     mockedBuildPageVectoriseResult.mockResolvedValue({
       ...mergedResult,
@@ -69,7 +69,7 @@ describe('API /api/story/page-vectorise', () => {
     const json = await res.json();
     expect(json).toEqual({
       status: 'Page vectorise executed',
-      result: { ...mergedResult, retriggered: true },
+      result: mergedResult,
     });
   });
 

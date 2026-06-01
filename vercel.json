@@ -14,7 +14,7 @@
       },
       {
         "path": "/api/docs/ingest",
-        "schedule": "0 */6 * * *"
+        "schedule": "*/30 * * * *"
       },
       {
         "path": "/api/story/page-vectorise",

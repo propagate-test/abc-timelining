@@ -63,7 +63,7 @@ describe('API /api/story/voice-vectorise', () => {
     mockedBuildVoiceVectoriseResult.mockReset();
   });
 
-  it('should handle POST for internal chaining', async () => {
+  it('should handle POST requests', async () => {
     mockedRunTranscribeTick.mockResolvedValue(transcribeTickResult);
     mockedRunVectoriseTick.mockResolvedValue(vectoriseTickResult);
     mockedBuildVoiceVectoriseResult.mockResolvedValue({
@@ -93,7 +93,7 @@ describe('API /api/story/voice-vectorise', () => {
     const json = await res.json();
     expect(json).toEqual({
       status: 'Voice vectorise executed',
-      result: { ...mergedResult, retriggered: true },
+      result: mergedResult,
     });
   });
 

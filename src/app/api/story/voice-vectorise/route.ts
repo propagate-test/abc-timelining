@@ -1,4 +1,3 @@
-import { queueInternalContinuation } from '@/lib/internal-continuation';
 import { logger } from '@/lib/logger';
 import { verifyCronOrInfraRequest } from '@/lib/private-auth';
 import {
@@ -14,8 +13,7 @@ async function handleVoiceVectorise(request: NextRequest) {
     return authError;
   }
 
-  const isChained = request.headers.get('x-voice-vectorise-chain') === '1';
-  logger.info('Voice vectorise triggered.', { method: request.method, isChained });
+  logger.info('Voice vectorise triggered.', { method: request.method });
 
   try {
     const [transcribe, vectorise] = await Promise.all([
@@ -24,20 +22,11 @@ async function handleVoiceVectorise(request: NextRequest) {
     ]);
 
     const result = await buildVoiceVectoriseResult(transcribe, vectorise);
-    let retriggered = false;
-    if (result.hasMore) {
-      retriggered = true;
-      queueInternalContinuation({
-        request,
-        path: '/api/story/voice-vectorise',
-        chainHeader: 'x-voice-vectorise-chain',
-      });
-    }
 
     logger.info('Voice vectorise result', { result });
 
     return NextResponse.json(
-      { status: 'Voice vectorise executed', result: { ...result, retriggered } },
+      { status: 'Voice vectorise executed', result },
       { status: 200 }
     );
   } catch (error: unknown) {

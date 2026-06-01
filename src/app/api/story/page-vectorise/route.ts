@@ -1,4 +1,3 @@
-import { queueInternalContinuation } from '@/lib/internal-continuation';
 import { logger } from '@/lib/logger';
 import { verifyCronOrInfraRequest } from '@/lib/private-auth';
 import { buildPageVectoriseResult, runPageVectoriseTick } from '@/services/vectorise';
@@ -10,26 +9,16 @@ async function handlePageVectorise(request: NextRequest) {
     return authError;
   }
 
-  const isChained = request.headers.get('x-page-vectorise-chain') === '1';
-  logger.info('Page vectorise triggered.', { method: request.method, isChained });
+  logger.info('Page vectorise triggered.', { method: request.method });
 
   try {
     const tick = await runPageVectoriseTick();
     const result = await buildPageVectoriseResult(tick);
-    let retriggered = false;
-    if (result.hasMore) {
-      retriggered = true;
-      queueInternalContinuation({
-        request,
-        path: '/api/story/page-vectorise',
-        chainHeader: 'x-page-vectorise-chain',
-      });
-    }
 
     logger.info('Page vectorise result', { result });
 
     return NextResponse.json(
-      { status: 'Page vectorise executed', result: { ...result, retriggered } },
+      { status: 'Page vectorise executed', result },
       { status: 200 }
     );
   } catch (error: unknown) {
