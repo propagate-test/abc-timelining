@@ -35,6 +35,39 @@ export async function getDocsPageChecksum(slug: string): Promise<string | null> 
   }
 }
 
+export async function getDocsPageChecksums(
+  slugs: string[]
+): Promise<Map<string, string | null>> {
+  const checksums = new Map<string, string | null>();
+  if (slugs.length === 0) {
+    return checksums;
+  }
+
+  const driver = await initDriver();
+  const session = driver.session({ database: 'neo4j' });
+
+  try {
+    const result = await session.run(
+      `
+      UNWIND $slugs AS slug
+      OPTIONAL MATCH (p:Page { slug: slug, source: $source })
+      RETURN slug, p.checksum AS checksum
+      `,
+      { slugs, source: DOCS_SOURCE }
+    );
+
+    for (const record of result.records) {
+      const slug = record.get('slug') as string;
+      const checksum = record.get('checksum');
+      checksums.set(slug, typeof checksum === 'string' ? checksum : null);
+    }
+
+    return checksums;
+  } finally {
+    await session.close();
+  }
+}
+
 async function upsertDocsPageInTx(tx: Transaction, input: DocsPageUpsertInput): Promise<void> {
   await tx.run(
     `
@@ -54,46 +87,47 @@ async function upsertDocsCommitsInTx(
   slug: string,
   commitHistory: CommitHistoryEntry[]
 ): Promise<void> {
-  for (const commit of commitHistory) {
-    await tx.run(
-      `
-      MERGE (c:Commit { sha: $sha })
-      SET c.message = $message,
-          c.author_name = $author_name,
-          c.author_email = $author_email,
-          c.timestamp = datetime($timestamp)
-      WITH c
-      MATCH (p:Page { slug: $slug, source: $source })
-      MERGE (c)-[:MODIFIES]->(p)
-      `,
-      {
-        slug,
-        source: DOCS_SOURCE,
-        sha: commit.sha,
-        message: commit.message,
-        author_name: commit.author_name,
-        author_email: commit.author_email,
-        timestamp: commit.timestamp,
-      }
-    );
+  if (commitHistory.length === 0) {
+    return;
   }
-}
 
-async function upsertDocsUnresolvedAuthorInTx(
-  tx: Transaction,
-  email: string,
-  name: string,
-  slug: string
-): Promise<void> {
   await tx.run(
     `
-    MERGE (u:UnresolvedAuthor { email: $email })
-    SET u.name = $name
-    WITH u
     MATCH (p:Page { slug: $slug, source: $source })
+    UNWIND $commits AS commit
+    MERGE (c:Commit { sha: commit.sha })
+    SET c.message = commit.message,
+        c.author_name = commit.author_name,
+        c.author_email = commit.author_email,
+        c.timestamp = datetime(commit.timestamp)
+    MERGE (c)-[:MODIFIES]->(p)
+    `,
+    {
+      slug,
+      source: DOCS_SOURCE,
+      commits: commitHistory,
+    }
+  );
+}
+
+async function upsertDocsUnresolvedAuthorsInTx(
+  tx: Transaction,
+  slug: string,
+  authors: PageSnapshotEntry['authors']
+): Promise<void> {
+  if (authors.length === 0) {
+    return;
+  }
+
+  await tx.run(
+    `
+    MATCH (p:Page { slug: $slug, source: $source })
+    UNWIND $authors AS author
+    MERGE (u:UnresolvedAuthor { email: author.email })
+    SET u.name = author.name
     MERGE (u)-[:CONTRIBUTED_TO]->(p)
     `,
-    { email, name, slug, source: DOCS_SOURCE }
+    { authors, slug, source: DOCS_SOURCE }
   );
 }
 
@@ -112,9 +146,7 @@ export async function syncDocsPageFromSnapshot(entry: PageSnapshotEntry): Promis
         last_modified: entry.last_modified,
       });
       await upsertDocsCommitsInTx(tx, entry.slug, entry.commit_history);
-      for (const author of entry.authors) {
-        await upsertDocsUnresolvedAuthorInTx(tx, author.email, author.name, entry.slug);
-      }
+      await upsertDocsUnresolvedAuthorsInTx(tx, entry.slug, entry.authors);
     });
   } finally {
     await session.close();

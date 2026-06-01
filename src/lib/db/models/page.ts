@@ -44,6 +44,11 @@ export interface DocsIngestResult {
   message?: string;
   stats: DocsIngestStats;
   ingestRunId?: string;
+  hasMore?: boolean;
+  nextCursor?: number;
+  totalPages?: number;
+  processedPages?: number;
+  retriggered?: boolean;
 }
 
 export interface DocsPageViewEvent {
