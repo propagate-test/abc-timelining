@@ -20,7 +20,7 @@ export interface ChangedPagesBatchSelection {
   updated: number;
 }
 
-const DEFAULT_INGEST_BATCH_SIZE = 40;
+const DEFAULT_INGEST_BATCH_SIZE = 20;
 
 function parseBatchSize(batchSize?: number): number {
   if (typeof batchSize === 'number' && Number.isFinite(batchSize) && batchSize > 0) {
