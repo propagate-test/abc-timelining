@@ -63,99 +63,141 @@ export async function createEntry(input: FullEntryInputData): Promise<string> {
             WHEN $chatType = 'supergroup' AND $chatTopic IS NOT NULL THEN $chatTopic 
             ELSE NULL 
           END
-        CREATE (e:Entry {
-          id: randomUUID(),
-          updateId: $updateId,
-          messageId: $messageId,
-          date: datetime($date),
-          resolveStatus: 'pending',
-          resolvedAt: null
-        })-[:SENT_BY]->(p)
-
-        MERGE (e)-[:FROM_CHAT]->(c)
-
+        WITH p, c
+        OPTIONAL MATCH (existing:Entry)-[:FROM_CHAT]->(c)
+        WHERE existing.messageId = $messageId
+        WITH p, c, existing
+        FOREACH (_ IN CASE WHEN existing IS NULL THEN [1] ELSE [] END |
+          CREATE (newE:Entry {
+            id: randomUUID(),
+            updateId: $updateId,
+            messageId: $messageId,
+            date: datetime($date),
+            resolveStatus: 'pending',
+            resolvedAt: null
+          })-[:SENT_BY]->(p)
+          MERGE (newE)-[:FROM_CHAT]->(c)
+        )
+        WITH p, c
+        MATCH (e:Entry)-[:FROM_CHAT]->(c)
+        WHERE e.messageId = $messageId
         WITH e, p, c
+        ORDER BY e.date ASC
+        LIMIT 1
 
         ${input.textContent ? `
-        CREATE (t:TextContent {id: randomUUID(), text: $text})
-        MERGE (e)-[:HAS_TEXT]->(t)
+        OPTIONAL MATCH (e)-[:HAS_TEXT]->(existingText:TextContent)
+        WITH e, p, c, existingText
+        FOREACH (_ IN CASE WHEN existingText IS NULL THEN [1] ELSE [] END |
+          CREATE (t:TextContent {id: randomUUID(), text: $text})
+          MERGE (e)-[:HAS_TEXT]->(t)
+        )
         WITH e, p, c
         ` : ''}
 
         ${input.captionContent ? `
-        CREATE (cap:CaptionContent {id: randomUUID(), caption: $caption})
-        MERGE (e)-[:HAS_CAPTION]->(cap)
+        OPTIONAL MATCH (e)-[:HAS_CAPTION]->(existingCaption:CaptionContent)
+        WITH e, p, c, existingCaption
+        FOREACH (_ IN CASE WHEN existingCaption IS NULL THEN [1] ELSE [] END |
+          CREATE (cap:CaptionContent {id: randomUUID(), caption: $caption})
+          MERGE (e)-[:HAS_CAPTION]->(cap)
+        )
         WITH e, p, c
         ` : ''}
 
         ${input.entities?.length > 0 ? `
-        UNWIND range(0, size($entityOffsets) - 1) AS idxEntity
-        CREATE (en:Entity {
-          id: randomUUID(),
-          offset: $entityOffsets[idxEntity],
-          length: $entityLengths[idxEntity],
-          type: $entityTypes[idxEntity]
-        })
-        MERGE (e)-[:HAS_ENTITY]->(en)
+        OPTIONAL MATCH (e)-[:HAS_ENTITY]->(existingEntity:Entity)
+        WITH e, p, c, count(existingEntity) AS entityCount
+        CALL {
+          WITH e, entityCount
+          WITH e WHERE entityCount = 0
+          UNWIND range(0, size($entityOffsets) - 1) AS idxEntity
+          CREATE (en:Entity {
+            id: randomUUID(),
+            offset: $entityOffsets[idxEntity],
+            length: $entityLengths[idxEntity],
+            type: $entityTypes[idxEntity]
+          })
+          MERGE (e)-[:HAS_ENTITY]->(en)
+          RETURN count(*) AS created
+        }
         WITH e, p, c
         ` : ''}
 
         ${input.photos?.length > 0 ? `
-          WITH e, p, c,
+          OPTIONAL MATCH (e)-[:HAS_PHOTO]->(existingPhoto:Photo)
+          WITH e, p, c, count(existingPhoto) AS photoCount,
             size($photoFileIds) - 1 AS lastIdx
-          CREATE (pht:Photo {
-            id: randomUUID(),
-            fileId: $photoFileIds[lastIdx],
-            fileUniqueId: $photoFileUniqueIds[lastIdx],
-            fileSize: $photoFileSizes[lastIdx],
-            width: $photoWidths[lastIdx],
-            height: $photoHeights[lastIdx]
-          })
-          MERGE (e)-[:HAS_PHOTO]->(pht)
+          FOREACH (_ IN CASE WHEN photoCount = 0 THEN [1] ELSE [] END |
+            CREATE (pht:Photo {
+              id: randomUUID(),
+              fileId: $photoFileIds[lastIdx],
+              fileUniqueId: $photoFileUniqueIds[lastIdx],
+              fileSize: $photoFileSizes[lastIdx],
+              width: $photoWidths[lastIdx],
+              height: $photoHeights[lastIdx]
+            })
+            MERGE (e)-[:HAS_PHOTO]->(pht)
+          )
           WITH e, p, c
           ` : ''}
 
         ${input.voice ? `
-        CREATE (vn:Voice {
-          id: randomUUID(),
-          fileId: $voiceFileId,
-          fileUniqueId: $voiceFileUniqueId,
-          fileSize: $voiceFileSize,
-          duration: $voiceDuration,
-          mimeType: $voiceMimeType,
-          processingStatus: 'pending',
-          retryCount: 0
-        })
-        MERGE (e)-[:HAS_VOICE]->(vn)
+        OPTIONAL MATCH (e)-[:HAS_VOICE]->(existingVoice:Voice)
+        WITH e, p, c, existingVoice
+        FOREACH (_ IN CASE WHEN existingVoice IS NULL THEN [1] ELSE [] END |
+          CREATE (vn:Voice {
+            id: randomUUID(),
+            fileId: $voiceFileId,
+            fileUniqueId: $voiceFileUniqueId,
+            fileSize: $voiceFileSize,
+            duration: $voiceDuration,
+            mimeType: $voiceMimeType,
+            processingStatus: 'pending',
+            retryCount: 0
+          })
+          MERGE (e)-[:HAS_VOICE]->(vn)
+        )
         WITH e, p, c
         ` : ''}
 
         ${input.videos?.length > 0 ? `
-        UNWIND range(0, size($videoFileIds) - 1) AS idxVideo
-        CREATE (vid:Video {
-          id: randomUUID(),
-          duration: $videoDurations[idxVideo],
-          width: $videoWidths[idxVideo],
-          height: $videoHeights[idxVideo],
-          mimeType: $videoMimeTypes[idxVideo],
-          fileId: $videoFileIds[idxVideo],
-          fileUniqueId: $videoFileUniqueIds[idxVideo],
-          fileSize: $videoFileSizes[idxVideo]
-        })
-        MERGE (e)-[:HAS_VIDEO]->(vid)
+        OPTIONAL MATCH (e)-[:HAS_VIDEO]->(existingVideo:Video)
+        WITH e, p, c, count(existingVideo) AS videoCount
+        CALL {
+          WITH e, videoCount
+          WITH e WHERE videoCount = 0
+          UNWIND range(0, size($videoFileIds) - 1) AS idxVideo
+          CREATE (vid:Video {
+            id: randomUUID(),
+            duration: $videoDurations[idxVideo],
+            width: $videoWidths[idxVideo],
+            height: $videoHeights[idxVideo],
+            mimeType: $videoMimeTypes[idxVideo],
+            fileId: $videoFileIds[idxVideo],
+            fileUniqueId: $videoFileUniqueIds[idxVideo],
+            fileSize: $videoFileSizes[idxVideo]
+          })
+          MERGE (e)-[:HAS_VIDEO]->(vid)
+          RETURN count(*) AS created
+        }
         WITH e, p, c
         ` : ''}
 
         ${input.videoNote ? `
-        CREATE (vidnote:VideoNote {
-          id: randomUUID(),
-          duration: $videoNoteDuration,
-          length: $videoNoteLength,
-          fileId: $videoNoteFileId,
-          fileUniqueId: $videoNoteFileUniqueId,
-          fileSize: $videoNoteFileSize
-        })
-        MERGE (e)-[:HAS_VIDEO_NOTE]->(vidnote)
+        OPTIONAL MATCH (e)-[:HAS_VIDEO_NOTE]->(existingVideoNote:VideoNote)
+        WITH e, p, c, existingVideoNote
+        FOREACH (_ IN CASE WHEN existingVideoNote IS NULL THEN [1] ELSE [] END |
+          CREATE (vidnote:VideoNote {
+            id: randomUUID(),
+            duration: $videoNoteDuration,
+            length: $videoNoteLength,
+            fileId: $videoNoteFileId,
+            fileUniqueId: $videoNoteFileUniqueId,
+            fileSize: $videoNoteFileSize
+          })
+          MERGE (e)-[:HAS_VIDEO_NOTE]->(vidnote)
+        )
         WITH e, p, c
         ` : ''}
 
