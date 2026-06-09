@@ -1,12 +1,5 @@
 import { runDocsPageVerification } from '@/services/docs/pageVerify';
-import { initDriver } from '@/lib/db/neo4j';
-import type { ResolveStatus } from '@/lib/db/models/entry';
 import { redis } from '@/lib/redis';
-import {
-  countEntriesPendingResolve,
-  countResolveStatusByStatus,
-} from '@/services/resolve/neo4j';
-import type { ResolveStatusCounts } from '@/services/resolve/types';
 import { countPagesNeedingVectorisation } from '@/services/vectorise/page/neo4j';
 import {
   countOutstanding as countVoiceOutstanding,
@@ -15,7 +8,7 @@ import {
 import type { VoicePipelineCounts } from '@/services/vectorise/voice/types';
 import { INGEST_BACKLOG_QUEUE } from '@organising-config';
 
-export type PipelineStage = 'ingest' | 'vectorise' | 'resolve';
+export type PipelineStage = 'ingest' | 'vectorise';
 
 export interface IngestBacklog {
   available: boolean;
@@ -42,68 +35,15 @@ export interface DocsSyncBacklog {
   pendingVectorise: number;
 }
 
-export interface AllEntryResolveCounts extends ResolveStatusCounts {
-  total: number;
-}
-
-export interface ResolveBacklog {
-  /** Entries on schema topics ready for the resolve tick (`resolveStatus = pending`, voice gate passed). */
-  outstanding: number;
-  /** Same counts the resolve tick reports after each run. */
-  schemaTopics: ResolveStatusCounts;
-  /** All Entry nodes regardless of chat topic. */
-  allEntries: AllEntryResolveCounts;
-}
-
 export interface PipelineBacklogSummary {
   ingest: IngestBacklog;
   voice: VoiceVectoriseBacklog;
   page: PageVectoriseBacklog;
   docsSync: DocsSyncBacklog | null;
-  resolve: ResolveBacklog;
 }
 
 export interface PipelineBacklogOptions {
   includeDocsSync?: boolean;
-}
-
-async function countAllEntriesByResolveStatus(): Promise<AllEntryResolveCounts> {
-  const driver = await initDriver();
-  const session = driver.session({ database: 'neo4j' });
-
-  try {
-    const result = await session.run(
-      `
-      MATCH (e:Entry)
-      RETURN e.resolveStatus AS status, count(e) AS count
-      `
-    );
-
-    const counts: AllEntryResolveCounts = {
-      unset: 0,
-      pending: 0,
-      attempted: 0,
-      successful: 0,
-      failed: 0,
-      total: 0,
-    };
-
-    for (const record of result.records) {
-      const status = record.get('status') as ResolveStatus | null;
-      const count = record.get('count').toNumber();
-      counts.total += count;
-
-      if (status == null) {
-        counts.unset += count;
-      } else if (status in counts) {
-        counts[status] += count;
-      }
-    }
-
-    return counts;
-  } finally {
-    await session.close();
-  }
 }
 
 export async function getIngestBacklog(): Promise<IngestBacklog> {
@@ -147,30 +87,19 @@ export async function getDocsSyncBacklog(): Promise<DocsSyncBacklog | null> {
   };
 }
 
-export async function getResolveBacklog(): Promise<ResolveBacklog> {
-  const [outstanding, schemaTopics, allEntries] = await Promise.all([
-    countEntriesPendingResolve(),
-    countResolveStatusByStatus(),
-    countAllEntriesByResolveStatus(),
-  ]);
-
-  return { outstanding, schemaTopics, allEntries };
-}
-
 export async function getPipelineBacklogSummary(
   options: PipelineBacklogOptions = {}
 ): Promise<PipelineBacklogSummary> {
   const includeDocsSync = options.includeDocsSync ?? true;
 
-  const [ingest, voice, page, resolve, docsSync] = await Promise.all([
+  const [ingest, voice, page, docsSync] = await Promise.all([
     getIngestBacklog(),
     getVoiceVectoriseBacklog(),
     getPageVectoriseBacklog(),
-    getResolveBacklog(),
     includeDocsSync ? getDocsSyncBacklog() : Promise.resolve(null),
   ]);
 
-  return { ingest, voice, page, docsSync, resolve };
+  return { ingest, voice, page, docsSync };
 }
 
 export function pipelineHasBacklog(summary: PipelineBacklogSummary): boolean {
@@ -178,15 +107,10 @@ export function pipelineHasBacklog(summary: PipelineBacklogSummary): boolean {
   if (summary.voice.outstanding > 0) return true;
   if (summary.page.outstanding > 0) return true;
   if (summary.docsSync != null && summary.docsSync.needsAttention > 0) return true;
-  if (summary.resolve.outstanding > 0) return true;
-  if (summary.resolve.schemaTopics.attempted > 0) return true;
-  if (summary.resolve.schemaTopics.unset > 0) return true;
   return false;
 }
 
 export function pipelineHasFailures(summary: PipelineBacklogSummary): boolean {
   if (summary.voice.counts.failed > 0) return true;
-  if (summary.resolve.schemaTopics.failed > 0) return true;
-  if (summary.resolve.allEntries.failed > 0) return true;
   return false;
 }

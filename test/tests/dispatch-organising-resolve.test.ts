@@ -2,10 +2,7 @@ import {
   buildOrganisingResolveUrl,
   resolveRouteForTopic,
 } from '@organising-config';
-import {
-  dispatchOrganisingResolve,
-  dispatchOrganisingResolves,
-} from '@/services/webhook/dispatchOrganisingResolve';
+import { dispatchOrganisingResolve } from '@/services/webhook/dispatchOrganisingResolve';
 
 describe('dispatchOrganisingResolve', () => {
   const originalFetch = global.fetch;
@@ -55,17 +52,5 @@ describe('dispatchOrganisingResolve', () => {
     const result = await dispatchOrganisingResolve('entry-1', '_botDecidir');
     expect(result.dispatched).toBe(false);
     expect(result.error).toBe('http_502');
-  });
-
-  it('batch dispatches multiple entries', async () => {
-    (global.fetch as jest.Mock).mockResolvedValue({ ok: true, status: 200 });
-
-    const result = await dispatchOrganisingResolves([
-      { entryId: 'entry-1', topic: '_botEnrolment' },
-      { entryId: 'entry-2', topic: '_botAgendar' },
-      { entryId: 'entry-3', topic: '_botEvaluation' },
-    ]);
-
-    expect(result).toEqual({ dispatched: 2, failed: 0, skipped: 1 });
   });
 });

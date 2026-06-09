@@ -6,12 +6,13 @@ import OpenAI from 'openai';
 import { logger } from '@/lib/logger';
 import { MAX_VOICE_DURATION_SEC } from './types';
 import {
+  loadEntryTopicForVoice,
   loadVoiceById,
   markDeferredLong,
   markTranscribed,
   recordStageFailure,
 } from './neo4j';
-import { afterTranscribeDispatch } from './afterTranscribe';
+import { triggerResolve } from '@/services/resolve';
 
 function getBotToken(): string {
   const token =
@@ -89,7 +90,10 @@ export async function transcribeStage(voiceId: string): Promise<TranscribeStageR
     await markTranscribed(voiceId, transcription);
     logger.info('Voice transcribed', { voiceId });
 
-    await afterTranscribeDispatch(voiceId);
+    const entryRef = await loadEntryTopicForVoice(voiceId);
+    if (entryRef) {
+      await triggerResolve(entryRef.entryId, entryRef.topic, { source: 'voice', voiceId });
+    }
 
     return 'transcribed';
   } catch (error) {

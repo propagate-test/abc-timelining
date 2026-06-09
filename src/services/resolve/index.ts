@@ -1,2 +1,2 @@
-export { runResolveEntriesTick, buildResolveEntriesResult } from './tick';
-export type { ResolveEntriesResult, ResolveEntriesTickResult, ResolveStatusCounts } from './types';
+export { triggerResolve } from './triggerResolve';
+export type { TriggerResolveContext } from './triggerResolve';

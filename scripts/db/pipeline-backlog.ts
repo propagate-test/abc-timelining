@@ -1,6 +1,5 @@
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
-import { resolveTopics } from '@organising-config';
 import type {
   PipelineBacklogSummary,
   PipelineStage,
@@ -8,7 +7,6 @@ import type {
 import {
   getIngestBacklog,
   getPageVectoriseBacklog,
-  getResolveBacklog,
   getVoiceVectoriseBacklog,
   getDocsSyncBacklog,
   getPipelineBacklogSummary,
@@ -21,9 +19,9 @@ loadDbEnv();
 
 const argv = yargs(hideBin(process.argv))
   .option('stage', {
-    choices: ['ingest', 'vectorise', 'resolve', 'all'] as const,
+    choices: ['ingest', 'vectorise', 'all'] as const,
     default: 'all' as const,
-    describe: 'Pipeline stage to report (default: all three)',
+    describe: 'Pipeline stage to report (default: both)',
   })
   .option('skip-docs', {
     type: 'boolean',
@@ -99,50 +97,6 @@ function printVectorise(summary: Pick<PipelineBacklogSummary, 'voice' | 'page' |
   }
 }
 
-function printResolve(summary: PipelineBacklogSummary['resolve']): void {
-  console.log('\nStage 3 — Resolve');
-  console.log('  post-transcribe dispatch + cron backstop → external organising apps');
-  console.log(`  resolve topics: ${resolveTopics().join(', ')}`);
-  console.log('────────────────────────────────────────────');
-
-  const { outstanding, schemaTopics, allEntries } = summary;
-  const resolveIcon = statusIcon(
-    outstanding > 0 || schemaTopics.attempted > 0 || schemaTopics.failed > 0
-  );
-
-  console.log(`${resolveIcon}  Schema-topic entries (resolve tick)`);
-  console.log(`     outstanding (pending, voice-ready): ${outstanding}`);
-  console.log(
-    `     pending: ${schemaTopics.pending}, attempted: ${schemaTopics.attempted}, ` +
-      `successful: ${schemaTopics.successful}, failed: ${schemaTopics.failed}, ` +
-      `unset: ${schemaTopics.unset}`
-  );
-  if (outstanding > 0 || schemaTopics.attempted > 0) {
-    console.log('     Tick: POST /api/story/resolve');
-  }
-  if (schemaTopics.unset > 0) {
-    console.log(
-      `     ${schemaTopics.unset} schema-topic entr${schemaTopics.unset === 1 ? 'y' : 'ies'} missing resolveStatus (legacy)`
-    );
-  }
-  if (schemaTopics.failed > 0) {
-    console.log('     Retry: pnpm db:resolve:backlog --reprocess-failed');
-  }
-
-  console.log('  All Entry nodes (any chat topic)');
-  console.log(
-    `     pending: ${allEntries.pending}, attempted: ${allEntries.attempted}, ` +
-      `successful: ${allEntries.successful}, failed: ${allEntries.failed}, ` +
-      `unset: ${allEntries.unset}, total: ${allEntries.total}`
-  );
-  const nonSchemaPending = Math.max(0, allEntries.pending - schemaTopics.pending);
-  if (nonSchemaPending > 0) {
-    console.log(
-      `     non-schema pending (no handler): ${nonSchemaPending}`
-    );
-  }
-}
-
 function printFooter(summary: PipelineBacklogSummary): void {
   console.log('\n────────────────────────────────────────────');
   const backlog = pipelineHasBacklog(summary);
@@ -156,11 +110,13 @@ function printFooter(summary: PipelineBacklogSummary): void {
     console.log('Result: OK — no outstanding backlogs');
   }
 
+  console.log('\nResolve backlog is owned by sibling apps (enrol, enact, etc.)');
+  console.log('Use each app\'s own resolve backlog tooling or status API.');
+
   console.log('\nDrill-down scripts');
   console.log('  Stage 2 voice index:  pnpm db:vector-index:check');
   console.log('  Stage 2 page detail:  pnpm db:check:page-ingest');
   console.log('  Stage 2 page seed:    pnpm db:seed:docs-pages');
-  console.log('  Stage 3 process:      pnpm db:resolve:backlog');
   console.log('────────────────────────────────────────────');
 }
 
@@ -174,11 +130,6 @@ async function loadSummary(stage: PipelineStage | 'all'): Promise<PipelineBacklo
     voice: { outstanding: 0, counts: { pending: 0, transcribed: 0, vectorised: 0, failed: 0, deferred_long: 0 } },
     page: { outstanding: 0 },
     docsSync: null,
-    resolve: {
-      outstanding: 0,
-      schemaTopics: { unset: 0, pending: 0, attempted: 0, successful: 0, failed: 0 },
-      allEntries: { unset: 0, pending: 0, attempted: 0, successful: 0, failed: 0, total: 0 },
-    },
   };
 
   if (stage === 'ingest') {
@@ -186,16 +137,11 @@ async function loadSummary(stage: PipelineStage | 'all'): Promise<PipelineBacklo
     return partial;
   }
 
-  if (stage === 'vectorise') {
-    partial.voice = await getVoiceVectoriseBacklog();
-    partial.page = await getPageVectoriseBacklog();
-    if (!argv['skip-docs']) {
-      partial.docsSync = await getDocsSyncBacklog();
-    }
-    return partial;
+  partial.voice = await getVoiceVectoriseBacklog();
+  partial.page = await getPageVectoriseBacklog();
+  if (!argv['skip-docs']) {
+    partial.docsSync = await getDocsSyncBacklog();
   }
-
-  partial.resolve = await getResolveBacklog();
   return partial;
 }
 
@@ -204,6 +150,7 @@ async function main(): Promise<void> {
   const summary = await loadSummary(stage);
 
   console.log('\nPipeline backlog summary');
+  console.log('  Stages: ingest → vectorise (resolve trigger is event-driven; backlog lives in sibling apps)');
   console.log('════════════════════════════════════════════');
 
   if (stage === 'all' || stage === 'ingest') {
@@ -211,9 +158,6 @@ async function main(): Promise<void> {
   }
   if (stage === 'all' || stage === 'vectorise') {
     printVectorise(summary);
-  }
-  if (stage === 'all' || stage === 'resolve') {
-    printResolve(summary.resolve);
   }
 
   if (stage === 'all') {

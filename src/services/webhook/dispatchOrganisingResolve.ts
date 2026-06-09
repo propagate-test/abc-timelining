@@ -20,12 +20,6 @@ export interface OrganisingResolveDispatchResult {
   error?: string;
 }
 
-export interface OrganisingResolveBatchResult {
-  dispatched: number;
-  failed: number;
-  skipped: number;
-}
-
 export async function dispatchOrganisingResolve(
   entryId: string,
   topic: string
@@ -61,28 +55,4 @@ export async function dispatchOrganisingResolve(
     logger.error('Organising resolve dispatch failed', { entryId, topic, url, error: message });
     return { dispatched: false, url, error: message };
   }
-}
-
-export async function dispatchOrganisingResolves(
-  entries: Array<{ entryId: string; topic: string }>
-): Promise<OrganisingResolveBatchResult> {
-  let dispatched = 0;
-  let failed = 0;
-  let skipped = 0;
-
-  for (const { entryId, topic } of entries) {
-    const result = await dispatchOrganisingResolve(entryId, topic);
-    if (result.error === 'no_resolve_route') {
-      skipped++;
-      continue;
-    }
-    if (result.dispatched) {
-      dispatched++;
-    } else {
-      failed++;
-    }
-  }
-
-  logger.info('Organising resolve batch complete', { dispatched, failed, skipped });
-  return { dispatched, failed, skipped };
 }

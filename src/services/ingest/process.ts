@@ -3,6 +3,7 @@ import { createEntry, logNodeCreation, readEntry } from '../entryService';
 import { logger } from '../../lib/logger';
 import { verifyExpectationsMet } from '../entryService';
 import { mapTelegramMessageToEntryInputData } from '@/lib/db/mappers';
+import { triggerResolve } from '@/services/resolve';
 
 export async function writeEntry(message: TelegramMessage): Promise<string> {
 
@@ -38,6 +39,10 @@ export async function writeEntry(message: TelegramMessage): Promise<string> {
       }
 
       verifyExpectationsMet(expected, result);
+
+      if (entryInput.textContent) {
+        await triggerResolve(id, entryInput.chat.topic, { source: 'text' });
+      }
 
     } catch (error: unknown) {
         if (error instanceof Error) {
