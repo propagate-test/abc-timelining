@@ -80,7 +80,7 @@ describe('forwardToOrganisingWebhook', () => {
     const axios = jest.requireMock('axios');
     await forwardToOrganisingWebhook('enact.prisma.events', { message: { id: 1 } });
     expect(axios.post).toHaveBeenCalledWith(
-      'https://enact.prisma.events/webhook',
+      'https://enact.prisma.events/api/webhook',
       { message: { id: 1 } },
       expect.objectContaining({ timeout: 5000 })
     );

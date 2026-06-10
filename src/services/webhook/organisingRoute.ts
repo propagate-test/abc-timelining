@@ -22,7 +22,7 @@ export async function forwardToOrganisingWebhook(
   domain: string,
   payload: unknown
 ): Promise<void> {
-  const url = `https://${domain}/webhook`;
+  const url = `https://${domain}/api/webhook`;
 
   try {
     await axios.post(url, payload, {
