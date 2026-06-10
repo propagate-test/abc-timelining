@@ -114,7 +114,8 @@ export function webhookPathForTopic(topic: string | null | undefined): string | 
 
   for (const spec of allChannelSpecs()) {
     if (spec.channel === topic) {
-      return ORGANISING_CONFIG[spec.key].webhook?.path ?? null;
+      const app = ORGANISING_CONFIG[spec.key];
+      return 'webhook' in app ? app.webhook.path : null;
     }
   }
 
