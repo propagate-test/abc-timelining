@@ -11,6 +11,8 @@ export interface OrganisingChannel {
 
 export interface OrganisingAppConfig {
   domain: string;
+  /** Immediate Telegram forward target; omit for resolve-only apps. */
+  webhook?: OrganisingResolveRoute;
   channels: Record<string, OrganisingChannel>;
 }
 
@@ -38,6 +40,7 @@ export const ORGANISING_CONFIG = {
   },
   enrol: {
     domain: 'register.prisma.events',
+    webhook: { path: '/api/webhook' },
     channels: {
       enrolment: {
         channel: '_botEnrolment',
@@ -98,6 +101,20 @@ export function organisingDomainForTopic(topic: string | null | undefined): stri
   for (const spec of allChannelSpecs()) {
     if (spec.channel === topic) {
       return spec.domain;
+    }
+  }
+
+  return null;
+}
+
+export function webhookPathForTopic(topic: string | null | undefined): string | null {
+  if (!topic) {
+    return null;
+  }
+
+  for (const spec of allChannelSpecs()) {
+    if (spec.channel === topic) {
+      return ORGANISING_CONFIG[spec.key].webhook?.path ?? null;
     }
   }
 

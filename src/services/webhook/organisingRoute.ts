@@ -20,9 +20,11 @@ export { organisingDomainForTopic };
 
 export async function forwardToOrganisingWebhook(
   domain: string,
+  path: string,
   payload: unknown
 ): Promise<void> {
-  const url = `https://${domain}/api/webhook`;
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  const url = `https://${domain}${normalizedPath}`;
 
   try {
     await axios.post(url, payload, {

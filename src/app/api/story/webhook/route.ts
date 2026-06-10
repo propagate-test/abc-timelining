@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { INGEST_BACKLOG_QUEUE } from '@organising-config';
+import { INGEST_BACKLOG_QUEUE, webhookPathForTopic } from '@organising-config';
 import { logger } from '@/lib/logger';
 import { redis } from '@/lib/redis';
 import { setMessageReaction } from '@/lib/telegram';
@@ -25,14 +25,15 @@ export async function POST(request: NextRequest) {
 
     const topicName = topicFromWebhookPayload(data);
     const organisingDomain = organisingDomainForTopic(topicName);
+    const webhookPath = webhookPathForTopic(topicName);
 
     if (
       data.message?.chat?.type === 'private' ||
       topicName?.includes('_bot') ||
       topicName?.includes('prisma_events_storying')
     ) {
-      if (organisingDomain) {
-        await forwardToOrganisingWebhook(organisingDomain, data);
+      if (organisingDomain && webhookPath) {
+        await forwardToOrganisingWebhook(organisingDomain, webhookPath, data);
       }
 
       const serialized = JSON.stringify(data);

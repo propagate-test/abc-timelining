@@ -5,6 +5,7 @@ import {
   organisingKeyForTopic,
   resolveRouteForTopic,
   resolveTopics,
+  webhookPathForTopic,
 } from '@organising-config';
 import {
   forwardToOrganisingWebhook,
@@ -50,6 +51,12 @@ describe('organising config', () => {
     expect(organisingDomainForTopic('_botEnrolment')).toBe('register.prisma.events');
     expect(organisingDomainForTopic('_botDecidiendo')).toBeNull();
   });
+
+  it('returns webhook forward paths only for interactive apps', () => {
+    expect(webhookPathForTopic('_botEnrolment')).toBe('/api/webhook');
+    expect(webhookPathForTopic('_botAgendar')).toBeNull();
+    expect(webhookPathForTopic('_botDecidir')).toBeNull();
+  });
 });
 
 describe('organisingRoute', () => {
@@ -78,9 +85,9 @@ jest.mock('axios', () => ({
 describe('forwardToOrganisingWebhook', () => {
   it('posts to the app base webhook URL', async () => {
     const axios = jest.requireMock('axios');
-    await forwardToOrganisingWebhook('enact.prisma.events', { message: { id: 1 } });
+    await forwardToOrganisingWebhook('register.prisma.events', '/api/webhook', { message: { id: 1 } });
     expect(axios.post).toHaveBeenCalledWith(
-      'https://enact.prisma.events/api/webhook',
+      'https://register.prisma.events/api/webhook',
       { message: { id: 1 } },
       expect.objectContaining({ timeout: 5000 })
     );
