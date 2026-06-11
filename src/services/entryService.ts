@@ -1,5 +1,5 @@
 import { getDriver, initDriver } from '../lib/db/neo4j';
-import type { QueryResult, Transaction } from 'neo4j-driver';
+import neo4j, { type QueryResult, type Transaction } from 'neo4j-driver';
 import { logger } from '../lib/logger';
 import { 
   FullEntryData, 
@@ -65,7 +65,7 @@ export async function createEntry(input: FullEntryInputData): Promise<string> {
           END
         WITH p, c
         OPTIONAL MATCH (existing:Entry)-[:FROM_CHAT]->(c)
-        WHERE existing.messageId = $messageId
+        WHERE toInteger(existing.messageId) = $messageId
         WITH p, c, existing
         FOREACH (_ IN CASE WHEN existing IS NULL THEN [1] ELSE [] END |
           CREATE (newE:Entry {
@@ -80,7 +80,7 @@ export async function createEntry(input: FullEntryInputData): Promise<string> {
         )
         WITH p, c
         MATCH (e:Entry)-[:FROM_CHAT]->(c)
-        WHERE e.messageId = $messageId
+        WHERE toInteger(e.messageId) = $messageId
         WITH e, p, c
         ORDER BY e.date ASC
         LIMIT 1
@@ -202,7 +202,8 @@ export async function createEntry(input: FullEntryInputData): Promise<string> {
         ` : ''}
 
         ${input.replyTo ? `
-        MATCH (repliedTo:Entry {messageId: $replyToMessageId})
+        MATCH (repliedTo:Entry)
+        WHERE toInteger(repliedTo.messageId) = $replyToMessageId
         MERGE (e)-[:REPLIED_TO]->(repliedTo)
         ` : ''}
 
@@ -216,11 +217,14 @@ export async function createEntry(input: FullEntryInputData): Promise<string> {
         chatUsername: input.chat.type === 'private' ? input.chat.username : null,
         chatTopic: input.chat.type === 'private' ? null : input.chat.topic,
         chatType: input.chat.type,
-        updateId: input.entry.updateId,
-        messageId: input.entry.messageId,
+        updateId: neo4j.int(input.entry.updateId),
+        messageId: neo4j.int(input.entry.messageId),
         date: input.entry.date,
         text: input.textContent?.text,
-        replyToMessageId: input.replyTo?.messageId,
+        replyToMessageId:
+          input.replyTo?.messageId != null
+            ? neo4j.int(input.replyTo.messageId)
+            : undefined,
         caption: input.captionContent?.caption,
         entityOffsets: input.entities.map(entity => entity.offset),
         entityLengths: input.entities.map(entity => entity.length),
