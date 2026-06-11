@@ -1,11 +1,12 @@
 import { logger } from '@/lib/logger';
+import { originFromRequest } from '@/lib/internal-dispatch';
 import { verifyCronOrInfraRequest } from '@/lib/private-auth';
-import {
-  buildVoiceVectoriseResult,
-  runTranscribeTick,
-  runVectoriseTick,
-} from '@/services/vectorise';
+import { pushTranscribeFailed } from '@/services/pipeline/failed-queue';
+import { runVoiceVectoriseRetry } from '@/services/pipeline/retry';
+import { transcribeStage } from '@/services/vectorise/voice/transcribe';
 import { NextRequest, NextResponse } from 'next/server';
+
+export const maxDuration = 60;
 
 async function handleVoiceVectorise(request: NextRequest) {
   const authError = verifyCronOrInfraRequest(request);
@@ -13,20 +14,44 @@ async function handleVoiceVectorise(request: NextRequest) {
     return authError;
   }
 
-  logger.info('Voice vectorise triggered.', { method: request.method });
+  const voiceId = request.nextUrl.searchParams.get('voiceId');
+  const mode = request.nextUrl.searchParams.get('mode');
+
+  logger.info('Voice vectorise triggered.', { method: request.method, voiceId, mode });
 
   try {
-    const [transcribe, vectorise] = await Promise.all([
-      runTranscribeTick(),
-      runVectoriseTick(),
-    ]);
+    if (mode === 'retry') {
+      const origin = originFromRequest(request);
+      const result = await runVoiceVectoriseRetry({ origin });
+      return NextResponse.json(
+        { status: 'Voice vectorise retry executed', result },
+        { status: 200 }
+      );
+    }
 
-    const result = await buildVoiceVectoriseResult(transcribe, vectorise);
+    if (voiceId) {
+      const result = await transcribeStage(voiceId);
+      if (result === 'failed') {
+        await pushTranscribeFailed(voiceId, 'transcribe_stage_failed');
+      }
+      return NextResponse.json(
+        {
+          status: 'Voice transcribe executed',
+          result: { voiceId, stage: result },
+        },
+        { status: 200 }
+      );
+    }
 
-    logger.info('Voice vectorise result', { result });
+    const url = new URL(request.url);
+    url.searchParams.set('mode', 'retry');
+    const origin = originFromRequest(
+      new NextRequest(url, { method: request.method, headers: request.headers })
+    );
+    const retryResult = await runVoiceVectoriseRetry({ origin });
 
     return NextResponse.json(
-      { status: 'Voice vectorise executed', result },
+      { status: 'Voice vectorise retry executed', result: retryResult },
       { status: 200 }
     );
   } catch (error: unknown) {

@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server';
-import { INGEST_BACKLOG_QUEUE } from '@organising-config';
+import {
+  INGEST_BACKLOG_QUEUE,
+  INGEST_FAILED_QUEUE,
+  RESOLVE_FAILED_QUEUE,
+  TRANSCRIBE_FAILED_QUEUE,
+} from '@organising-config';
 import { logger } from '@/lib/logger';
 import { redis } from '@/lib/redis';
 import { isNeo4jAvailable } from '@/lib/db/neo4j';
@@ -13,6 +18,7 @@ export async function GET() {
 
     let redisAvailable = true;
     let queuedMessages = 0;
+    let failedQueues = { ingest: 0, transcribe: 0, resolve: 0 };
     let voicePipeline = {
       pending: 0,
       transcribed: 0,
@@ -22,7 +28,18 @@ export async function GET() {
     };
 
     try {
-      queuedMessages = await redis.llen(INGEST_BACKLOG_QUEUE);
+      const [queued, ingestFailed, transcribeFailed, resolveFailed] = await Promise.all([
+        redis.llen(INGEST_BACKLOG_QUEUE),
+        redis.llen(INGEST_FAILED_QUEUE),
+        redis.llen(TRANSCRIBE_FAILED_QUEUE),
+        redis.llen(RESOLVE_FAILED_QUEUE),
+      ]);
+      queuedMessages = queued;
+      failedQueues = {
+        ingest: ingestFailed,
+        transcribe: transcribeFailed,
+        resolve: resolveFailed,
+      };
     } catch (err) {
       logger.error('Redis check failed', { error: err });
       redisAvailable = false;
@@ -51,9 +68,14 @@ export async function GET() {
     }
 
     const voiceOutstanding = voicePipeline.pending + voicePipeline.transcribed;
+    const hasFailed =
+      failedQueues.ingest > 0 ||
+      failedQueues.transcribe > 0 ||
+      failedQueues.resolve > 0 ||
+      voicePipeline.failed > 0;
 
     const status = {
-      health,
+      health: hasFailed ? 'degraded' : health,
       mode,
       services: {
         neo4j: {
@@ -74,11 +96,15 @@ export async function GET() {
       },
       queues: {
         [INGEST_BACKLOG_QUEUE]: queuedMessages,
+        [INGEST_FAILED_QUEUE]: failedQueues.ingest,
+        [TRANSCRIBE_FAILED_QUEUE]: failedQueues.transcribe,
+        [RESOLVE_FAILED_QUEUE]: failedQueues.resolve,
       },
       voice_pipeline: voicePipeline,
       messages: {
         queued: queuedMessages,
         voice_outstanding: voiceOutstanding,
+        failed_queues: failedQueues,
       },
     };
 

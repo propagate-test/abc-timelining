@@ -2,7 +2,7 @@ import type { VoiceProcessingStatus } from '@/lib/db/models/entry';
 import type { ScheduleHint } from '../shared/types';
 
 export const MAX_VOICE_DURATION_SEC = 180;
-export const MAX_RETRIES = 3;
+export const MAX_RETRIES = 2;
 
 export interface VoiceChunkInput {
   chunk_text: string;

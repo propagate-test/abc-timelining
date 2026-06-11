@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { INGEST_BACKLOG_QUEUE, webhookPathForTopic } from '@organising-config';
+import { INGEST_BACKLOG_QUEUE } from '@organising-config';
 import { logger } from '@/lib/logger';
+import { originFromRequest } from '@/lib/internal-dispatch';
 import { redis } from '@/lib/redis';
 import { setMessageReaction } from '@/lib/telegram';
 import { handleError } from '@/lib/utils';
-import {
-  forwardToOrganisingWebhook,
-  organisingDomainForTopic,
-  topicFromWebhookPayload,
-} from '@/services/webhook/organisingRoute';
+import { executePipelineActions } from '@/services/pipeline/execute';
+import { pipelineActionsForReceipt } from '@/services/pipeline/routing';
+import { topicFromWebhookPayload } from '@/services/webhook/organisingRoute';
 
 export async function POST(request: NextRequest) {
   if (request.method !== 'POST') {
@@ -24,17 +23,15 @@ export async function POST(request: NextRequest) {
     const messageId = data.message?.message_id;
 
     const topicName = topicFromWebhookPayload(data);
-    const organisingDomain = organisingDomainForTopic(topicName);
-    const webhookPath = webhookPathForTopic(topicName);
 
     if (
       data.message?.chat?.type === 'private' ||
       topicName?.includes('_bot') ||
       topicName?.includes('prisma_events_storying')
     ) {
-      if (organisingDomain && webhookPath) {
-        await forwardToOrganisingWebhook(organisingDomain, webhookPath, data);
-      }
+      const origin = originFromRequest(request);
+      const receiptActions = pipelineActionsForReceipt(topicName, origin, data);
+      await executePipelineActions(receiptActions);
 
       const serialized = JSON.stringify(data);
       await redis.lpush(INGEST_BACKLOG_QUEUE, serialized);

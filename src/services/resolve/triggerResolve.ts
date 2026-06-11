@@ -1,5 +1,6 @@
 import { resolveRouteForTopic } from '@organising-config';
 import { logger } from '@/lib/logger';
+import { pushResolveFailed } from '@/services/pipeline/failed-queue';
 import { dispatchOrganisingResolve } from '@/services/webhook/dispatchOrganisingResolve';
 
 export interface TriggerResolveContext {
@@ -18,7 +19,8 @@ export async function triggerResolve(
 
   const result = await dispatchOrganisingResolve(entryId, topic);
   if (!result.dispatched && result.error !== 'no_resolve_route') {
-    logger.warn('Resolve trigger dispatch failed; domain app resolve backlog will retry', {
+    await pushResolveFailed(entryId, topic, result.error ?? 'dispatch_failed');
+    logger.warn('Resolve trigger dispatch failed; queued for retry', {
       entryId,
       topic,
       source: context?.source,

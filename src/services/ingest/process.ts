@@ -3,9 +3,13 @@ import { createEntry, logNodeCreation, readEntry } from '../entryService';
 import { logger } from '../../lib/logger';
 import { verifyExpectationsMet } from '../entryService';
 import { mapTelegramMessageToEntryInputData } from '@/lib/db/mappers';
-import { triggerResolve } from '@/services/resolve';
+import { executePipelineActions } from '@/services/pipeline/execute';
+import { pipelineActionsAfterIngest } from '@/services/pipeline/routing';
 
-export async function writeEntry(message: TelegramMessage): Promise<string> {
+export async function writeEntry(
+  message: TelegramMessage,
+  origin?: string
+): Promise<string> {
 
     let entryInput;
     let id;
@@ -40,9 +44,13 @@ export async function writeEntry(message: TelegramMessage): Promise<string> {
 
       verifyExpectationsMet(expected, result);
 
-      if (entryInput.textContent) {
-        await triggerResolve(id, entryInput.chat.topic, { source: 'text' });
-      }
+      const postIngestActions = pipelineActionsAfterIngest(
+        entryInput.chat.topic,
+        entryInput,
+        result,
+        origin
+      );
+      await executePipelineActions(postIngestActions);
 
     } catch (error: unknown) {
         if (error instanceof Error) {

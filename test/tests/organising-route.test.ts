@@ -1,11 +1,13 @@
 import {
   buildOrganisingResolveUrl,
+  channelSpecForTopic,
   INGEST_BACKLOG_QUEUE,
+  INGEST_FAILED_QUEUE,
   organisingDomainForTopic,
   organisingKeyForTopic,
   resolveRouteForTopic,
   resolveTopics,
-  webhookPathForTopic,
+  webhookRouteForTopic,
 } from '@organising-config';
 import {
   forwardToOrganisingWebhook,
@@ -16,6 +18,7 @@ import {
 describe('organising config', () => {
   it('defines the ingest backlog queue name', () => {
     expect(INGEST_BACKLOG_QUEUE).toBe('timelining::ingest::backlog');
+    expect(INGEST_FAILED_QUEUE).toBe('timelining::ingest::failed');
   });
 
   it('lists resolve-enabled topics', () => {
@@ -38,6 +41,11 @@ describe('organising config', () => {
       domain: 'enact.prisma.events',
       path: '/api/webhook/resolve/schedule',
     });
+
+    expect(resolveRouteForTopic('_botEnrolment')).toEqual({
+      domain: 'register.prisma.events',
+      path: '/api/webhook/resolve',
+    });
   });
 
   it('maps configured channels to organising keys', () => {
@@ -52,10 +60,24 @@ describe('organising config', () => {
     expect(organisingDomainForTopic('_botDecidiendo')).toBeNull();
   });
 
-  it('returns webhook forward paths only for interactive apps', () => {
-    expect(webhookPathForTopic('_botEnrolment')).toBe('/api/webhook');
-    expect(webhookPathForTopic('_botAgendar')).toBeNull();
-    expect(webhookPathForTopic('_botDecidir')).toBeNull();
+  it('returns per-channel webhook routes only where configured', () => {
+    expect(webhookRouteForTopic('_botEnrolment')).toEqual({
+      domain: 'register.prisma.events',
+      path: '/api/webhook',
+    });
+    expect(webhookRouteForTopic('_botAgendar')).toBeNull();
+    expect(webhookRouteForTopic('_botDecidir')).toBeNull();
+  });
+
+  it('exposes full channel specs with webhook and resolve', () => {
+    expect(channelSpecForTopic('_botEnrolment')).toEqual(
+      expect.objectContaining({
+        key: 'enrol',
+        channel: '_botEnrolment',
+        webhook: { path: '/api/webhook' },
+        resolve: { path: '/api/webhook/resolve' },
+      })
+    );
   });
 });
 

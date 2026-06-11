@@ -6,6 +6,7 @@ import type {
 } from '../../src/services/pipeline/backlog';
 import {
   getIngestBacklog,
+  getFailedQueuesBacklog,
   getPageVectoriseBacklog,
   getVoiceVectoriseBacklog,
   getDocsSyncBacklog,
@@ -37,7 +38,7 @@ function statusIcon(hasIssue: boolean): string {
 
 function printIngest(summary: PipelineBacklogSummary['ingest']): void {
   console.log('\nStage 1 — Ingest');
-  console.log('  webhook → ingest backlog → ingest cron → Neo4j (entryService)');
+  console.log('  webhook → ingest backlog → chain dispatch → Neo4j (entryService)');
   console.log('────────────────────────────────────────────');
 
   if (!summary.available) {
@@ -46,10 +47,14 @@ function printIngest(summary: PipelineBacklogSummary['ingest']): void {
     return;
   }
 
-  const icon = statusIcon(summary.queued > 0);
+  const icon = statusIcon(summary.queued > 0 || summary.failed > 0);
   console.log(`${icon}  Queue ${summary.queueName}: ${summary.queued}`);
+  console.log(`     failed queue: ${summary.failed}`);
   if (summary.queued > 0) {
-    console.log('   Ingest: POST /api/story/ingest');
+    console.log('   Chain: webhook dispatches ingest; cron retries stuck backlog');
+  }
+  if (summary.failed > 0) {
+    console.log('   Retry: GET /api/story/ingest?mode=retry');
   }
 }
 
@@ -126,7 +131,8 @@ async function loadSummary(stage: PipelineStage | 'all'): Promise<PipelineBacklo
   }
 
   const partial: PipelineBacklogSummary = {
-    ingest: { available: false, queueName: 'timelining::ingest::backlog', queued: 0 },
+    ingest: { available: false, queueName: 'timelining::ingest::backlog', queued: 0, failed: 0 },
+    failedQueues: { ingest: 0, transcribe: 0, resolve: 0 },
     voice: { outstanding: 0, counts: { pending: 0, transcribed: 0, vectorised: 0, failed: 0, deferred_long: 0 } },
     page: { outstanding: 0 },
     docsSync: null,
@@ -134,6 +140,7 @@ async function loadSummary(stage: PipelineStage | 'all'): Promise<PipelineBacklo
 
   if (stage === 'ingest') {
     partial.ingest = await getIngestBacklog();
+    partial.failedQueues = await getFailedQueuesBacklog();
     return partial;
   }
 
@@ -150,7 +157,7 @@ async function main(): Promise<void> {
   const summary = await loadSummary(stage);
 
   console.log('\nPipeline backlog summary');
-  console.log('  Stages: ingest → vectorise (resolve trigger is event-driven; backlog lives in sibling apps)');
+  console.log('  Stages: ingest → transcribe → resolve (chained); vectorise on cron; crons retry failures');
   console.log('════════════════════════════════════════════');
 
   if (stage === 'all' || stage === 'ingest') {
@@ -158,6 +165,12 @@ async function main(): Promise<void> {
   }
   if (stage === 'all' || stage === 'vectorise') {
     printVectorise(summary);
+  }
+
+  if (stage === 'all' || stage === 'ingest') {
+    const fq = summary.failedQueues;
+    console.log('\nFailed queues (retry cron)');
+    console.log(`  ingest: ${fq.ingest}, transcribe: ${fq.transcribe}, resolve: ${fq.resolve}`);
   }
 
   if (stage === 'all') {

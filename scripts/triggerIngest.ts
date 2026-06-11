@@ -27,8 +27,16 @@ async function getDeploymentUrl(): Promise<string> {
   const baseUrl = await getDeploymentUrl();
   const fullUrl = `${baseUrl}/api/story/ingest`;
 
+  const token = process.env.PRIVATE_API_TOKEN;
+  if (!token) {
+    console.error("❌ PRIVATE_API_TOKEN is not set");
+    process.exit(1);
+  }
+
   try {
-    await axios.post(fullUrl);
+    await axios.post(fullUrl, undefined, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     console.log("✅ Ingest cron triggered at", fullUrl);
   } catch (err: any) {
     console.error("❌ Error triggering ingest:", err?.message ?? err);

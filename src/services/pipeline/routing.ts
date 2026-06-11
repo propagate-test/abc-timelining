@@ -1,0 +1,77 @@
+import { resolveRouteForTopic, webhookRouteForTopic } from '@organising-config';
+import { MAX_VOICE_DURATION_SEC } from '@/services/vectorise/voice/types';
+import type { FullEntryData, FullEntryInputData } from '@/lib/db/models/entry';
+
+export type PipelineAction =
+  | { kind: 'forward-webhook'; domain: string; path: string; payload: unknown }
+  | { kind: 'dispatch-ingest'; origin: string }
+  | { kind: 'trigger-resolve'; entryId: string; topic: string }
+  | { kind: 'dispatch-transcribe'; origin: string; voiceId: string }
+  | { kind: 'none' };
+
+function hasTextContent(entryInput: FullEntryInputData): boolean {
+  return Boolean(entryInput.textContent?.text?.trim());
+}
+
+function hasVoiceOnly(entryInput: FullEntryInputData): boolean {
+  return Boolean(entryInput.voice) && !hasTextContent(entryInput);
+}
+
+function isDeferredLongVoice(entryInput: FullEntryInputData): boolean {
+  return Boolean(
+    entryInput.voice && entryInput.voice.duration > MAX_VOICE_DURATION_SEC
+  );
+}
+
+export function pipelineActionsForReceipt(
+  topic: string | null | undefined,
+  origin: string,
+  payload: unknown
+): PipelineAction[] {
+  const actions: PipelineAction[] = [];
+
+  const webhookRoute = webhookRouteForTopic(topic);
+  if (webhookRoute) {
+    actions.push({
+      kind: 'forward-webhook',
+      domain: webhookRoute.domain,
+      path: webhookRoute.path,
+      payload,
+    });
+  }
+
+  actions.push({ kind: 'dispatch-ingest', origin });
+
+  return actions;
+}
+
+export function pipelineActionsAfterIngest(
+  topic: string | null | undefined,
+  entryInput: FullEntryInputData,
+  entry: FullEntryData,
+  origin: string | undefined
+): PipelineAction[] {
+  const resolveRoute = resolveRouteForTopic(topic);
+
+  if (hasTextContent(entryInput)) {
+    if (resolveRoute && topic) {
+      return [{ kind: 'trigger-resolve', entryId: entry.entry.id, topic }];
+    }
+    return [{ kind: 'none' }];
+  }
+
+  if (hasVoiceOnly(entryInput)) {
+    if (isDeferredLongVoice(entryInput)) {
+      return [{ kind: 'none' }];
+    }
+
+    const voiceId = entry.voice?.id;
+    if (!voiceId || !origin) {
+      return [{ kind: 'none' }];
+    }
+
+    return [{ kind: 'dispatch-transcribe', origin, voiceId }];
+  }
+
+  return [{ kind: 'none' }];
+}

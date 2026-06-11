@@ -1,56 +1,25 @@
 import { GET, POST } from '@/app/api/story/voice-vectorise/route';
-import {
-  buildVoiceVectoriseResult,
-  runTranscribeTick,
-  runVectoriseTick,
-} from '@/services/vectorise';
+import { runVoiceVectoriseRetry } from '@/services/pipeline/retry';
+import { transcribeStage } from '@/services/vectorise/voice/transcribe';
 import { NextRequest } from 'next/server';
 
-jest.mock('@/services/vectorise/index', () => ({
-  runTranscribeTick: jest.fn(),
-  runVectoriseTick: jest.fn(),
-  buildVoiceVectoriseResult: jest.fn(),
+jest.mock('@/services/pipeline/retry', () => ({
+  runVoiceVectoriseRetry: jest.fn(),
 }));
 
-const mockedRunTranscribeTick = runTranscribeTick as jest.MockedFunction<typeof runTranscribeTick>;
-const mockedRunVectoriseTick = runVectoriseTick as jest.MockedFunction<typeof runVectoriseTick>;
-const mockedBuildVoiceVectoriseResult = buildVoiceVectoriseResult as jest.MockedFunction<
-  typeof buildVoiceVectoriseResult
->;
+jest.mock('@/services/vectorise/voice/transcribe', () => ({
+  transcribeStage: jest.fn(),
+}));
 
-const transcribeTickResult = {
-  status: 'success' as const,
-  transcribed: 1,
-  skipped_long: 0,
-  failed: 0,
-};
+jest.mock('@/services/pipeline/failed-queue', () => ({
+  pushTranscribeFailed: jest.fn(),
+}));
 
-const vectoriseTickResult = {
-  status: 'success' as const,
-  vectorised: 2,
-  failed: 0,
-};
+const mockedRetry = runVoiceVectoriseRetry as jest.MockedFunction<typeof runVoiceVectoriseRetry>;
+const mockedTranscribe = transcribeStage as jest.MockedFunction<typeof transcribeStage>;
 
-const mergedResult = {
-  status: 'success' as const,
-  schedule: '30s' as const,
-  transcribed: 1,
-  vectorised: 2,
-  skipped_long: 0,
-  failed: 0,
-  outstanding: 3,
-  pipeline: {
-    pending: 1,
-    transcribed: 2,
-    vectorised: 10,
-    failed: 0,
-    deferred_long: 0,
-  },
-  hasMore: true,
-};
-
-function buildRequest(method: 'GET' | 'POST') {
-  return new NextRequest('http://localhost:3000/api/story/voice-vectorise', {
+function buildRequest(method: 'GET' | 'POST', query = '') {
+  return new NextRequest(`http://localhost:3000/api/story/voice-vectorise${query}`, {
     method,
     headers: { 'x-vercel-cron': '1' },
   });
@@ -58,50 +27,37 @@ function buildRequest(method: 'GET' | 'POST') {
 
 describe('API /api/story/voice-vectorise', () => {
   beforeEach(() => {
-    mockedRunTranscribeTick.mockReset();
-    mockedRunVectoriseTick.mockReset();
-    mockedBuildVoiceVectoriseResult.mockReset();
+    mockedRetry.mockReset();
+    mockedTranscribe.mockReset();
   });
 
-  it('should handle POST requests', async () => {
-    mockedRunTranscribeTick.mockResolvedValue(transcribeTickResult);
-    mockedRunVectoriseTick.mockResolvedValue(vectoriseTickResult);
-    mockedBuildVoiceVectoriseResult.mockResolvedValue({
-      ...mergedResult,
-      hasMore: false,
+  it('runs retry sweeper on cron GET', async () => {
+    mockedRetry.mockResolvedValue({
+      status: 'success',
+      transcribe_retried: 1,
+      resolve_retried: 0,
+      vectorised: 2,
+      failed: 0,
     });
 
-    const res = await POST(buildRequest('POST'));
+    const res = await GET(buildRequest('GET'));
     expect(res.status).toBe(200);
+    expect(mockedRetry).toHaveBeenCalled();
   });
 
-  it('should run both ticks in parallel and return merged result', async () => {
-    mockedRunTranscribeTick.mockResolvedValue(transcribeTickResult);
-    mockedRunVectoriseTick.mockResolvedValue(vectoriseTickResult);
-    mockedBuildVoiceVectoriseResult.mockResolvedValue(mergedResult);
+  it('transcribes a single voice when voiceId is provided', async () => {
+    mockedTranscribe.mockResolvedValue('transcribed');
 
-    const res = await GET(buildRequest('GET'));
-
-    expect(mockedRunTranscribeTick).toHaveBeenCalled();
-    expect(mockedRunVectoriseTick).toHaveBeenCalled();
-    expect(mockedBuildVoiceVectoriseResult).toHaveBeenCalledWith(
-      transcribeTickResult,
-      vectoriseTickResult
-    );
+    const res = await POST(buildRequest('POST', '?voiceId=voice-1&mode=chain'));
     expect(res.status).toBe(200);
-
-    const json = await res.json();
-    expect(json).toEqual({
-      status: 'Voice vectorise executed',
-      result: mergedResult,
-    });
+    expect(mockedTranscribe).toHaveBeenCalledWith('voice-1');
+    expect(mockedRetry).not.toHaveBeenCalled();
   });
 
-  it('should handle tick errors gracefully', async () => {
-    mockedRunTranscribeTick.mockRejectedValue(new Error('Something failed'));
+  it('handles retry errors gracefully', async () => {
+    mockedRetry.mockRejectedValue(new Error('Something failed'));
 
     const res = await GET(buildRequest('GET'));
-
     expect(res.status).toBe(500);
   });
 });
