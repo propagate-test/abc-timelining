@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { organisingDomainForTopic } from '@organising-config';
+import { internalDispatchHeaders } from '@/lib/internal-dispatch';
 import { logger } from '@/lib/logger';
 import { redis } from '@/lib/redis';
 
@@ -94,7 +95,7 @@ export async function forwardToOrganisingWebhook(
 
   try {
     await axios.post(url, payload, {
-      headers: { 'Content-Type': 'application/json' },
+      headers: internalDispatchHeaders(),
       timeout: 5000,
     });
     logger.info('Forwarded message to organising webhook', { domain });

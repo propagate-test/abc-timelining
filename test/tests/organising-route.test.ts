@@ -211,13 +211,28 @@ jest.mock('axios', () => ({
 }));
 
 describe('forwardToOrganisingWebhook', () => {
-  it('posts to the app base webhook URL', async () => {
+  const originalToken = process.env.PRIVATE_API_TOKEN;
+
+  beforeEach(() => {
+    process.env.PRIVATE_API_TOKEN = 'test-token';
+  });
+
+  afterEach(() => {
+    process.env.PRIVATE_API_TOKEN = originalToken;
+  });
+
+  it('posts to the app base webhook URL with auth headers', async () => {
     const axios = jest.requireMock('axios');
     await forwardToOrganisingWebhook('register.prisma.events', '/api/webhook', { message: { id: 1 } });
     expect(axios.post).toHaveBeenCalledWith(
       'https://register.prisma.events/api/webhook',
       { message: { id: 1 } },
-      expect.objectContaining({ timeout: 5000 })
+      expect.objectContaining({
+        timeout: 5000,
+        headers: expect.objectContaining({
+          Authorization: 'Bearer test-token',
+        }),
+      })
     );
   });
 });
