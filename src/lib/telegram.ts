@@ -71,6 +71,8 @@ export interface TelegramMessage {
       topic?: string;
     };
     date: number;
+    message_thread_id?: number;
+    is_topic_message?: boolean;
     text?: string;
     entities?: Array<{
       offset: number;

@@ -11,9 +11,21 @@ import {
 } from '@organising-config';
 import {
   forwardToOrganisingWebhook,
+  forumTopicNameFromMessage,
   organisingDomainForTopic as routeDomainForTopic,
   topicFromWebhookPayload,
 } from '@/services/webhook/organisingRoute';
+
+const forumTopicCache: Record<string, string> = {};
+
+jest.mock('@/lib/redis', () => ({
+  redis: {
+    set: jest.fn(async (key: string, value: string) => {
+      forumTopicCache[key] = value;
+    }),
+    get: jest.fn(async (key: string) => forumTopicCache[key] ?? null),
+  },
+}));
 
 describe('organising config', () => {
   it('defines the ingest backlog queue name', () => {
@@ -82,10 +94,63 @@ describe('organising config', () => {
 });
 
 describe('organisingRoute', () => {
-  it('extracts forum topic from webhook payload', () => {
-    expect(
+  beforeEach(() => {
+    Object.keys(forumTopicCache).forEach((key) => delete forumTopicCache[key]);
+  });
+
+  it('extracts forum topic from webhook payload', async () => {
+    await expect(
       topicFromWebhookPayload({
         message: {
+          reply_to_message: {
+            forum_topic_created: { name: '_botDecidir' },
+          },
+        },
+      })
+    ).resolves.toBe('_botDecidir');
+  });
+
+  it('extracts forum topic from nested reply chain', async () => {
+    await expect(
+      topicFromWebhookPayload({
+        message: {
+          chat: { id: 100 },
+          message_thread_id: 42,
+          reply_to_message: {
+            message_id: 99,
+            text: 'older message',
+            reply_to_message: {
+              message_id: 42,
+              forum_topic_created: { name: '_botEnrolment' },
+            },
+          },
+        },
+      })
+    ).resolves.toBe('_botEnrolment');
+  });
+
+  it('resolves forum topic from cache when reply chain has no topic stub', async () => {
+    forumTopicCache['timelining::forum-topic::100::42'] = '_botAgendar';
+
+    await expect(
+      topicFromWebhookPayload({
+        message: {
+          chat: { id: 100 },
+          message_thread_id: 42,
+          reply_to_message: {
+            message_id: 99,
+            text: 'standalone topic message',
+          },
+        },
+      })
+    ).resolves.toBe('_botAgendar');
+  });
+
+  it('walks reply chain synchronously via forumTopicNameFromMessage', () => {
+    expect(
+      forumTopicNameFromMessage({
+        reply_to_message: {
+          text: 'older message',
           reply_to_message: {
             forum_topic_created: { name: '_botDecidir' },
           },

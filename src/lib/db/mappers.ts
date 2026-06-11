@@ -1,4 +1,5 @@
 import { TelegramMessage } from '@/lib/telegram';
+import { forumTopicNameFromMessage } from '@/services/webhook/organisingRoute';
 import type { Node } from 'neo4j-driver';
 
 import { 
@@ -29,10 +30,8 @@ export function mapTelegramMessageToEntryInputData(msg: TelegramMessage): FullEn
         ? msg.message.reply_to_message
         : undefined;
 
-    const name = msg.message.reply_to_message && msg.message.reply_to_message.forum_topic_created
-        ? msg.message.reply_to_message.forum_topic_created.name
-        : `${msg.message.chat.type}_${msg.message.chat.username}`;
-    
+    const topicName = forumTopicNameFromMessage(msg.message);
+
     const rawVideo = msg.message.video;
 
     return {
@@ -50,7 +49,7 @@ export function mapTelegramMessageToEntryInputData(msg: TelegramMessage): FullEn
             username: msg.message.chat.username ? msg.message.chat.username : undefined,
             type: msg.message.chat.type,
             isForum: msg.message.chat.is_forum,
-            topic: msg.message.reply_to_message?.forum_topic_created ? msg.message.reply_to_message.forum_topic_created.name : undefined
+            topic: topicName
         },
         replyTo: replyTo
             ? {

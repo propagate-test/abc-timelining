@@ -1,19 +1,79 @@
 import axios from 'axios';
 import { organisingDomainForTopic } from '@organising-config';
 import { logger } from '@/lib/logger';
+import { redis } from '@/lib/redis';
 
-type WebhookPayload = {
-  message?: {
-    reply_to_message?: {
-      forum_topic_created?: {
-        name?: string;
-      };
-    };
+const FORUM_TOPIC_CACHE_PREFIX = 'timelining::forum-topic';
+
+type ForumTopicMessage = {
+  forum_topic_created?: {
+    name?: string;
   };
+  reply_to_message?: ForumTopicMessage;
 };
 
-export function topicFromWebhookPayload(payload: WebhookPayload): string | undefined {
-  return payload.message?.reply_to_message?.forum_topic_created?.name;
+type WebhookMessage = ForumTopicMessage & {
+  chat?: { id?: number };
+  message_thread_id?: number;
+};
+
+type WebhookPayload = {
+  message?: WebhookMessage;
+};
+
+function forumTopicCacheKey(chatId: number, threadId: number): string {
+  return `${FORUM_TOPIC_CACHE_PREFIX}::${chatId}::${threadId}`;
+}
+
+/** Walk reply_to_message chain to find the forum topic name (sync). */
+export function forumTopicNameFromMessage(
+  message: ForumTopicMessage | undefined
+): string | undefined {
+  let current = message?.reply_to_message;
+  while (current) {
+    const name = current.forum_topic_created?.name;
+    if (name) {
+      return name;
+    }
+    current = current.reply_to_message;
+  }
+  return undefined;
+}
+
+async function cacheForumTopicName(
+  chatId: number | undefined,
+  threadId: number | undefined,
+  topicName: string
+): Promise<void> {
+  if (chatId === undefined || threadId === undefined) {
+    return;
+  }
+  await redis.set(forumTopicCacheKey(chatId, threadId), topicName);
+}
+
+async function cachedForumTopicName(
+  chatId: number | undefined,
+  threadId: number | undefined
+): Promise<string | undefined> {
+  if (chatId === undefined || threadId === undefined) {
+    return undefined;
+  }
+  const cached = await redis.get<string>(forumTopicCacheKey(chatId, threadId));
+  return cached ?? undefined;
+}
+
+export async function topicFromWebhookPayload(
+  payload: WebhookPayload
+): Promise<string | undefined> {
+  const message = payload.message;
+  const topicName = forumTopicNameFromMessage(message);
+
+  if (topicName) {
+    await cacheForumTopicName(message?.chat?.id, message?.message_thread_id, topicName);
+    return topicName;
+  }
+
+  return cachedForumTopicName(message?.chat?.id, message?.message_thread_id);
 }
 
 export { organisingDomainForTopic };

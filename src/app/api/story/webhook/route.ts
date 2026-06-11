@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
     const chatId = data.message?.chat?.id;
     const messageId = data.message?.message_id;
 
-    const topicName = topicFromWebhookPayload(data);
+    const topicName = await topicFromWebhookPayload(data);
 
     if (
       data.message?.chat?.type === 'private' ||
