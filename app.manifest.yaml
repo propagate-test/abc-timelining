@@ -1,0 +1,94 @@
+apiVersion: propagate/v1
+kind: App
+
+app:
+  slug: timelining
+  name: Timelining
+  sourceUrl: https://github.com/prisma-collective/timelining
+
+provides:
+  capabilities:
+    - id: timelining.web
+      type: route
+      pattern: "{appSlug}.{eventCode}.{hostName}"
+    - id: story.webhook
+      type: route
+      path: /api/story/webhook
+    - id: story.voice_vectorise
+      type: route
+      path: /api/story/voice-vectorise
+    - id: story.ingest
+      type: route
+      path: /api/story/ingest
+    - id: story.page_vectorise
+      type: route
+      path: /api/story/page-vectorise
+    - id: story.handle
+      type: route
+      path: /api/story/{handle}
+    - id: story.chat.list
+      type: route
+      path: /api/story/chat/list
+    - id: story.chat.detail
+      type: route
+      path: /api/story/chat/{chatId}
+    - id: docs.ingest
+      type: route
+      path: /api/docs/ingest
+    - id: docs.log_drain
+      type: route
+      path: /api/docs/log-drain
+    - id: visualise.nodes
+      type: route
+      path: /api/visualise/nodes
+    - id: visualise.edges
+      type: route
+      path: /api/visualise/edges
+    - id: admin.status
+      type: route
+      path: /api/admin/status
+
+requires:
+  capabilities:
+    - id: telegram.bot_token
+      type: env
+      key: TELEGRAM_BOT_TOKEN
+      source: user
+    - id: telegram.bot_token_dev
+      type: env
+      key: TELEGRAM_BOT_TOKEN_DEV
+      source: user
+      optional: true
+    - id: openai.api_key
+      type: env
+      key: OPENAI_API_KEY
+      source: user
+    - id: upstash.kv
+      type: env
+      keys:
+        - KV_REST_API_URL
+        - KV_REST_API_TOKEN
+      source: provisioned
+      provisioner: vercel.upstash-kv
+    - id: neo4j.connection
+      type: env
+      keys:
+        - NEO4J_URI
+        - NEO4J_USERNAME
+        - NEO4J_PASSWORD
+      source: user
+    - id: docs.web
+      type: env
+      key: DOCS_APP_URL
+      source: capability
+    - id: shared.private_api_token
+      type: env
+      key: PRIVATE_API_TOKEN
+      source: generated
+    - id: vercel.automation_bypass
+      type: env
+      key: VERCEL_AUTOMATION_BYPASS_SECRET
+      source: generated
+
+dependsOn:
+  - docs
