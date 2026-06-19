@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -28,7 +28,7 @@ class CodemodFs {
 }
 
 function runGit(args) {
-  execSync(['git', ...args].join(' '), { stdio: 'inherit' });
+  execFileSync('git', args, { stdio: 'inherit' });
 }
 
 const repoRoot = process.cwd();
